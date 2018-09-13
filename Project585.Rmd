@@ -1,0 +1,137 @@
+---
+title: "Average Electricity Cost (per KWH)"
+author: "Zhe Zhao"
+date: "4/19/2018"
+output: pdf_document
+---
+
+```{r}
+#read in data and convert to monthly time series data
+AEP.data <- read.csv("Average Electricity.csv", header = F)
+library(forecast)
+AEP.ts <- ts(AEP.data$V1, start = c(2008,1), end = c(2018,3), frequency = 12)
+plot.ts(AEP.ts)
+```
+```{r}
+hist(AEP.ts)
+library(MASS)
+bc <- boxcox(AEP.ts~1, lambda=seq(-1, 1, 1/10))
+(lambda <- bc$x[which.max(bc$y)])
+hist(sqrt(AEP.ts))
+```
+
+
+```{r}
+library(tseries)
+adf.test(AEP.ts)
+```
+```{r}
+#estimation of a trend: Linear Square Approach
+l.fit <- lm(sqrt(AEP.ts) ~ c(1:123))
+plot(sqrt(AEP.ts),main="Linear Fit to Average Energy Price Data")
+lines(ts(l.fit$fitted.values, frequency=12, start=c(2008,1)))
+```
+```{r}
+plot(ts(l.fit$residuals,frequency=12,start=c(2008,1)),ylab="Residual")
+title(main="Residual of Average Energy Price Data")
+```
+```{r}
+#decomposition
+d <- decompose(AEP.ts, type="additive")
+plot(d)
+```
+
+```{r}
+#elimination of trend component
+par(mfrow = c(2,2))
+plot(diff(sqrt(AEP.ts)))
+adf.test(diff(sqrt(AEP.ts)))
+acf(diff(sqrt(AEP.ts)), lag.max = 38)
+pacf(diff(sqrt(AEP.ts)), lag.max = 38)
+```
+```{r}
+#elimination of seasonal component
+plot(diff(diff(sqrt(AEP.ts)), lag = 12))
+adf.test(diff(diff(sqrt(AEP.ts)), lag = 12))
+```
+```{r}
+#set up forecast comparison
+trans.AEP <- sqrt(AEP.ts)
+train <- trans.AEP[1:111]
+test <- trans.AEP[112:123]
+train.dl <- diff(trans.AEP)[1:110]
+test.dl <- diff(co2)[111:122]
+train.s <- diff(diff(trans.AEP), lag = 12)[1:98]
+test.s <- diff(diff(trans.AEP), lag = 12)[99:110]
+
+#find ARIMA
+library(TSA)
+fit <- armasubsets(train.s, nar = 20, nma = 13)
+plot(fit)
+```
+```{r}
+library(forecast)
+fit1 <- stats::arima(train,order=c(18,1,12), fixed=c(0,NA,0,NA, rep(0,13), NA, rep(0,6), NA, rep(0,4), NA))
+summary(fit1)
+fcast1=forecast::forecast(fit1,h=12)
+plot(fcast1)
+```
+```{r}
+#seasonal
+par(mfrow = c(1,2))
+acf(train.s, lag.max = 50)
+pacf(train.s, lag.max = 50)
+```
+```{r}
+(auto.fit.s <- auto.arima(train.s))
+fit.s1 <- Arima(train, order = c(0,1,2), seasonal = list(order=c(2,1,0), period = 12),lambda=0)
+fcast2=forecast(fit.s1,h=12)
+plot(fcast2)
+```
+```{r}
+#HW
+fith <- HoltWinters(train, gamma = F)
+HWfcast <- forecast(fith, h = 12, level = 0.95)
+plot(HWfcast)
+```
+```{r}
+#comparison
+#from arima fit
+arimaerr=test-fcast1$mean
+arimamae=mean(abs(arimaerr))
+arimarmse=sqrt(mean(arimaerr^2))
+arimamape=mean(abs((arimaerr*100)/test))
+
+#from sarima
+sarimaerr=test-fcast2$mean
+sarimamae=mean(abs(sarimaerr))
+sarimarmse=sqrt(mean(sarimaerr^2))
+sarimamape=mean(abs((sarimaerr*100)/test))
+
+#from holt-winter
+HWerr=test-HWfcast$mean
+HWmae=mean(abs(HWerr))
+HWrmse=sqrt(mean(HWerr^2))
+HWmape=mean(abs((HWerr*100)/test))
+
+matrix(c(arimarmse,arimamape, sarimarmse,sarimamape, HWrmse,HWmape), nrow = 2, ncol = 3, dimnames = list(c("RMSE", "MAPE"), c("ARIMA","SARIMA", "Holt-Winter")))
+```
+```{r}
+#model assessment
+tsdiag(fit.s1)
+```
+```{r}
+qqnorm(residuals(fit.s1))
+qqline(residuals(fit.s1))
+```
+```{r}
+auto.arima(residuals(fit.s1))
+```
+
+
+
+
+
+
+
+
